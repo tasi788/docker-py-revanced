@@ -53,6 +53,7 @@ jobs:
       DEBUG_ENABLED: ${{ inputs.DEBUG_ENABLED }}
     secrets:
       ENVS: ${{ secrets.ENVS }}
+      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
 
   upload-to-github:
     name: GitHub Upload
@@ -63,7 +64,7 @@ jobs:
 
     steps:
       - name: Download Already Built APKs
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@main
         with:
           name: Built-APKs
       - name: Get Date
@@ -79,7 +80,7 @@ jobs:
           RELEASE_PATTERN: "Build*"
 
       - name: Upload Build Artifact
-        uses: ncipollo/release-action@v1.12.0
+        uses: ncipollo/release-action@main
         with:
           artifacts: "*-output.apk"
           token: ${{ secrets.GITHUB_TOKEN }}

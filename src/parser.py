@@ -6,6 +6,7 @@ from typing import List
 
 from loguru import logger
 
+from src.app import APP
 from src.config import RevancedConfig
 from src.patches import Patches
 from src.utils import possible_archs
@@ -36,30 +37,27 @@ class Parser(object):
         self._EXCLUDED.append(name)
 
     def get_excluded_patches(self) -> List[str]:
-        """
-        Getter to get all excluded patches
-        :return: List of excluded patches
-        """
+        """Getter to get all excluded patches :return: List of excluded
+        patches."""
         return self._EXCLUDED
 
     def get_all_patches(self) -> List[str]:
-        """
-        Getter to get all excluded patches
-        :return: List of excluded patches
-        """
+        """Getter to get all excluded patches :return: List of excluded
+        patches."""
         return self._PATCHES
 
     def invert_patch(self, name: str) -> bool:
-        """
-        Getter to get all excluded patches
-        :return: List of excluded patches
-        """
+        """Getter to get all excluded patches :return: List of excluded
+        patches."""
         try:
+            name = name.lower().replace(" ", "-")
             patch_index = self._PATCHES.index(name)
-            if self._PATCHES[patch_index - 1] == "-e":
-                self._PATCHES[patch_index - 1] = "-i"
-            else:
-                self._PATCHES[patch_index - 1] = "-e"
+            indices = [i for i in range(len(self._PATCHES)) if self._PATCHES[i] == name]
+            for patch_index in indices:
+                if self._PATCHES[patch_index - 1] == "-e":
+                    self._PATCHES[patch_index - 1] = "-i"
+                else:
+                    self._PATCHES[patch_index - 1] = "-e"
             return True
         except ValueError:
             return False
@@ -73,59 +71,44 @@ class Parser(object):
     # noinspection IncorrectFormatting
     def patch_app(
         self,
-        app: str,
-        version: str,
-        is_experimental: bool = False,
-        output_prefix: str = "-",
+        app: APP,
     ) -> None:
         """Revanced APP Patcher.
 
         :param app: Name of the app
-        :param version: Version of the application
-        :param is_experimental: Whether to enable experimental support
-        :param output_prefix: Prefix to add to the output apks file name
         """
-        logger.debug(f"Sending request to revanced cli for building {app} revanced")
-        cli = self.config.normal_cli_jar
-        patches = self.config.normal_patches_jar
-        integrations = self.config.normal_integrations_apk
-        if self.config.build_extended and app in self.config.extended_apps:
-            cli = self.config.cli_jar
-            patches = self.config.patches_jar
-            integrations = self.config.integrations_apk
         args = [
             "-jar",
-            cli,
+            app.resource["cli"],
             "-a",
-            app + ".apk",
+            f"{app.app_name}.apk",
             "-b",
-            patches,
+            app.resource["patches"],
             "-m",
-            integrations,
+            app.resource["integrations"],
             "-o",
-            f"Re-{app}-{version}{output_prefix}output.apk",
+            app.get_output_file_name(),
             "--keystore",
-            self.config.keystore_name,
+            app.keystore_name,
+            "--options",
+            "options.json",
         ]
-        if is_experimental:
+        if app.experiment:
             logger.debug("Using experimental features")
             args.append("--experimental")
-        args[1::2] = map(lambda i: self.config.temp_folder.joinpath(i), args[1::2])
+        args[1::2] = map(self.config.temp_folder.joinpath, args[1::2])
         if self.config.ci_test:
             self.exclude_all_patches()
         if self._PATCHES:
             args.extend(self._PATCHES)
-        if (
-            self.config.build_extended
-            and len(self.config.archs_to_build) > 0
-            and app in self.config.rip_libs_apps
-        ):
-            excluded = set(possible_archs) - set(self.config.archs_to_build)
+        if app.app_name in self.config.rip_libs_apps:
+            excluded = set(possible_archs) - set(app.archs_to_build)
             for arch in excluded:
-                args.append("--rip-lib")
-                args.append(arch)
-
+                args.extend(("--rip-lib", arch))
         start = perf_counter()
+        logger.debug(
+            f"Sending request to revanced cli for building with args java {args}"
+        )
         process = Popen(["java", *args], stdout=PIPE)
         output = process.stdout
         if not output:

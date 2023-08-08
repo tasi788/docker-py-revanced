@@ -5,71 +5,40 @@ from environs import Env
 from loguru import logger
 
 from src.config import RevancedConfig
-from src.downloader import Downloader
+from src.downloader.factory import DownloaderFactory
 from src.parser import Parser
 from src.patches import Patches
-from src.utils import AppNotFound
+from src.utils import AppNotFound, PatchesJsonFailed, check_java
 
 
 def main() -> None:
     """Entry point."""
+    from src.app import APP
+
     env = Env()
     config = RevancedConfig(env)
+    check_java(config.dry_run)
 
-    patcher = Patches(config)
-    downloader = Downloader(patcher, config)
-    parser = Parser(patcher, config)
-
-    logger.info(f"Will Patch only {patcher.config.apps}")
-    for app in patcher.config.apps:
+    logger.info(f"Will Patch only {config.apps}")
+    for app in config.apps:
+        logger.info(f"Trying to build {app}")
         try:
-            logger.info("Trying to build %s" % app)
-            app_all_patches, version, is_experimental = patcher.get_app_configs(app)
-            version = downloader.download_apk_to_patch(version, app)
-            config.app_versions[app] = version
+            app = APP(app_name=app, config=config)
+            patcher = Patches(config, app)
+            parser = Parser(patcher, config)
+            app_all_patches = patcher.get_app_configs(app)
             patcher.include_exclude_patch(app, parser, app_all_patches)
-            logger.info(f"Downloaded {app}, version {version}")
-            parser.patch_app(app=app, version=version, is_experimental=is_experimental)
+            downloader = DownloaderFactory.create_downloader(
+                app=app.app_name, patcher=patcher, config=config
+            )
+            downloader.download(app.app_version, app.app_name)
+            parser.patch_app(app)
         except AppNotFound as e:
             logger.info(f"Invalid app requested to build {e}")
+        except PatchesJsonFailed:
+            logger.exception("Patches.json not found")
         except Exception as e:
             logger.exception(f"Failed to build {app} because of {e}")
-    if len(config.alternative_youtube_patches) and "youtube" in config.apps:
-        for alternative_patch in config.alternative_youtube_patches:
-            _, version, is_experimental = patcher.get_app_configs("youtube")
-            was_inverted = parser.invert_patch(alternative_patch)
-            if was_inverted:
-                logger.info(
-                    f"Rebuilding youtube with inverted {alternative_patch} patch."
-                )
-                parser.patch_app(
-                    app="youtube",
-                    version=config.app_versions.get("youtube", "latest"),
-                    is_experimental=is_experimental,
-                    output_prefix="-" + alternative_patch + "-",
-                )
-            else:
-                logger.info(
-                    f"Skipping Rebuilding youtube as {alternative_patch} patch was not found."
-                )
-    if len(config.alternative_youtube_music_patches) and "youtube_music" in config.apps:
-        for alternative_patch in config.alternative_youtube_music_patches:
-            _, version, is_experimental = patcher.get_app_configs("youtube_music")
-            was_inverted = parser.invert_patch(alternative_patch)
-            if was_inverted:
-                logger.info(
-                    f"Rebuilding youtube music with inverted {alternative_patch} patch."
-                )
-                parser.patch_app(
-                    app="youtube_music",
-                    version=config.app_versions.get("youtube_music", "latest"),
-                    is_experimental=is_experimental,
-                    output_prefix="-" + alternative_patch + "-",
-                )
-            else:
-                logger.info(
-                    f"Skipping Rebuilding youtube music as {alternative_patch} patch was not found."
-                )
 
 
 if __name__ == "__main__":
