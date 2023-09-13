@@ -1,11 +1,13 @@
 *.apk
 *.jar
 *.keystore
-venv
+*venv
 */__pycache__*
 *.pyc
 /revanced-cache/
+/revanced-resource-cache/
 changelog.md
 .idea
 *.json
 status.md
+*.zip
